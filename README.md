@@ -1,5 +1,6 @@
 # pld-discord-webhook
-Remember, you can change any of this code to better fit your wants/needs, just please credit me if you plan to redistribute :)
+A python script that impliments [hazemn's pls donate stream alerts](https://x.com/secrethazem/status/1851056785689321476) as discord announcements/messages 
+<br><br>Remember, you can change any of this code to better fit your wants/needs, just please credit me if you plan to redistribute :)
 ## installation
 via git:
 ```git clone https://github.com/cosmaticdev/pld-discord-webhook```
