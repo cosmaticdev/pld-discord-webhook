@@ -1,8 +1,8 @@
 minamount = 0
-maxlength = 999
 robloxuserid = YOUR ROBLOX USER
 discordchannelid = YOUR CHANNEL ID
 BOT_TOKEN = "YOUR TOKEN"
+# make sure all data (besides BOT_TOKEN are integers!)
 
 import asyncio, websockets
 import discord
@@ -12,19 +12,28 @@ from pathlib import Path
 
 
 async def connect_to_websocket():
-    uri = f"wss://stream.plsdonate.com/api/user/{robloxuserid}/websocket"
-    async with websockets.connect(uri) as websocket:
-        # Send a message
-        await websocket.send(f"Hello from {robloxuserid}!")
-        print("Connected to websocket")
+    try:
+        with open("settings.json") as f:
+            temp = json.loads(f.read())
 
-        # Receive a message
-        while True:
-            response = await websocket.recv()
-            """ {"message":str,"sender":{"id":int,"username":str,"displayName":str},"amount":int} """
-            print("Message received from server:", response)
-            print(type(response))
-            await sendMessage(response)
+        uri = f"wss://stream.plsdonate.com/api/user/{temp['robloxuserid']}/websocket"
+        async with websockets.connect(uri) as websocket:
+            # Send a message
+            await websocket.send(f"Hello from {temp['robloxuserid']}!")
+            print(f"Connected to websocket as {temp['robloxuserid']}")
+
+            # Receive a message
+            while True:
+                response = await websocket.recv()
+                """ {"message":str,"sender":{"id":int,"username":str,"displayName":str},"amount":int} """
+                print("Message received from server:", response)
+                response = json.loads(response)
+                if response["amount"] >= temp["minamount"]:
+                    await sendMessage(response)
+                else:
+                    print(f"Last donation was too small! ({response['amount']})")
+    except asyncio.CancelledError:
+        print("Websocket needs reconnection")
 
 
 intents = discord.Intents.default()  # set intents
@@ -39,7 +48,6 @@ if not my_file.is_file():
             json.dumps(
                 {
                     "minamount": minamount,
-                    "maxlength": maxlength,
                     "channelid": discordchannelid,
                     "robloxuserid": robloxuserid,
                 }
@@ -49,16 +57,16 @@ if not my_file.is_file():
 
 @bot.event
 async def on_ready():
-    print(f"Logged in as {bot.user.name} ({bot.user.id})")
+    print(f"Logged in to discord as {bot.user.name} ({bot.user.id})")
 
 
 @bot.event
 async def on_message(message):
     if message.author.guild_permissions.administrator:
-        if message.content.startswith(f"<@{bot.user.id}> settings"):
+        if message.content.startswith(f"<@{bot.user.id}> settings "):
             if message.content.split(f"<@{bot.user.id}> settings ")[1].split(" ")[
                 0
-            ].lower() in ["minamount", "maxlength", "channelid", "robloxuserid"]:
+            ].lower() in ["minamount", "channelid", "robloxuserid"]:
 
                 try:
                     int(
@@ -69,8 +77,13 @@ async def on_message(message):
                         )
                     )
                 except:
+                    embed = discord.Embed(
+                        title="Whoops!",
+                        description="Please only send an int value for your data",
+                        color=discord.Color.purple(),
+                    )
                     await message.channel.send(
-                        "Please only send an int value for your data",
+                        embed=embed,
                         reference=message,
                     )
                     return
@@ -89,38 +102,100 @@ async def on_message(message):
                 with open("settings.json", "w") as f:
                     f.write(json.dumps(data, indent=2))
 
+                embed = discord.Embed(
+                    title="Updated!",
+                    description=f'Updated your {message.content.split(f"<@{bot.user.id}> settings ")[1].split(" ")[0].lower()} setting!',
+                    color=discord.Color.purple(),
+                )
+
                 await message.channel.send(
-                    "Updated your settings",
+                    embed=embed,
                     reference=message,
                 )
+
+                if (
+                    message.content.split(f"<@{bot.user.id}> settings ")[1]
+                    .split(" ")[0]
+                    .lower()
+                    == "robloxuserid"
+                ):
+                    global task
+
+                    task.cancel()
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        print("Task cancelled.")
+
+                    task = asyncio.create_task(connect_to_websocket())
+
                 return
             else:
+                embed = discord.Embed(
+                    title="Whoops!",
+                    description=f"That's not a valid setting, run '<@{bot.user.id}> help' to see what is.",
+                    color=discord.Color.purple(),
+                )
                 await message.channel.send(
-                    f"That's not a valid setting, run '<@{bot.user.id}> help' to see what is.",
+                    embed=embed,
                     reference=message,
                 )
                 return
+
+        elif message.content.startswith(f"<@{bot.user.id}> test"):
+            embed = discord.Embed(
+                title="Running Test",
+                description="Running a test donation! Go check if it's in the right channel!",
+                color=discord.Color.purple(),
+            )
+            await message.channel.send(
+                embed=embed,
+                reference=message,
+            )
+            await sendMessage(
+                {
+                    "message": "This is a test donation!",
+                    "sender": {
+                        "id": "NA",
+                        "username": "radcaterator",
+                        "displayName": "cosmatic",
+                    },
+                    "amount": 10000000,
+                }
+            )
+
+            return
+
         elif message.content.startswith(f"<@{bot.user.id}>"):
 
+            embed = discord.Embed(
+                title="Settings",
+                description=f"Configure settings:\n'<@{bot.user.id}> settings <setting> <value>'\noptions: minamount, channelid, robloxuserid\nRun a test donation using '<@{bot.user.id}> test'",
+                color=discord.Color.purple(),
+            )
+
             await message.channel.send(
-                f"Configure settings:\n'<@{bot.user.id}> settings <setting> <value>'\noptions: minamount, maxlength, channelid, robloxuserid",
+                embed=embed,
                 reference=message,
             )
             return
 
 
 async def sendMessage(data):
-    print(type(data))
-    data = json.loads(data)
     try:
         with open("settings.json") as f:
             temp = json.loads(f.read())
 
         channel = bot.get_channel(temp["channelid"])
         if channel is not None:
-            message = f"{data['sender']['displayName']} ({data['sender']['username']}) sent {data['amount']} robux via pls donate!\n{data['message']}"
+            message = f"{data['sender']['displayName']} ({data['sender']['username']}) sent {data['amount']} robux via pls donate!\n\"{data['message']}\""
+            embed = discord.Embed(
+                title="New tip!",
+                description=message,
+                color=discord.Color.purple(),
+            )
             print(message)
-            await channel.send(message)
+            await channel.send(embed=embed)
         else:
             print("Channel not found.")
     except Exception as e:
@@ -128,7 +203,7 @@ async def sendMessage(data):
 
 
 async def main():
-
+    global task
     task = asyncio.create_task(connect_to_websocket())
 
     await bot.start(BOT_TOKEN)
